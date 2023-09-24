@@ -13,7 +13,7 @@ from modules.paths import models_path
 # I am making a choice to include some files from codeformer to work around this issue.
 model_dir = "Codeformer"
 model_path = os.path.join(models_path, model_dir)
-model_url = 'https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth'
+model_url = 'https://ghproxy.com/https://github.com/sczhou/CodeFormer/releases/download/v0.1.0/codeformer.pth'
 
 codeformer = None
 
