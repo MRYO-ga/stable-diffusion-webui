@@ -399,7 +399,7 @@ class Api:
         return reqq.add_req_queue(self.request_queue, img2imgreq, "img2img")
 
     def queue_query_result(self, query: models.QueryData):
-        return reqq.get_result(query.request_id, self.request_queue, self.monitor.sd_app)
+        return reqq.get_result(query.request_id, self.request_queue, self.monitor.ad_api_handle)
 
     def img2imgapi(self, img2imgreq: models.StableDiffusionImg2ImgProcessingAPI):
         init_images = img2imgreq.init_images
