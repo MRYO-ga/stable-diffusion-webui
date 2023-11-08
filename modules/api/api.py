@@ -33,7 +33,10 @@ from typing import Dict, List, Any
 import piexif
 import piexif.helper
 from contextlib import closing
+from app_manager import reqq
 
+import queue
+from app_manager.reqq import QueueMonitor
 
 def script_name_to_index(name, scripts):
     try:
@@ -208,7 +211,13 @@ class Api:
         self.router = APIRouter()
         self.app = app
         self.queue_lock = queue_lock
+        
+        # Create a QueueMonitor object with the Queue
+        self.request_queue = queue.Queue(20)
+        self.monitor = QueueMonitor(self.request_queue, self)
         api_middleware(self.app)
+        self.add_api_route("/sdapi/v1/queue-process", self.queue_process_api, methods=["POST"], status_code=201)
+        self.add_api_route("/sdapi/v1/queue-query-result", self.queue_query_result, methods=["POST"], status_code=201)
         self.add_api_route("/sdapi/v1/txt2img", self.text2imgapi, methods=["POST"], response_model=models.TextToImageResponse)
         self.add_api_route("/sdapi/v1/img2img", self.img2imgapi, methods=["POST"], response_model=models.ImageToImageResponse)
         self.add_api_route("/sdapi/v1/extra-single-image", self.extras_single_image_api, methods=["POST"], response_model=models.ExtrasSingleImageResponse)
@@ -385,6 +394,12 @@ class Api:
         b64images = list(map(encode_pil_to_base64, processed.images)) if send_images else []
 
         return models.TextToImageResponse(images=b64images, parameters=vars(txt2imgreq), info=processed.js())
+
+    def queue_process_api(self, img2imgreq: models.StableDiffusionImg2ImgProcessingAPI):
+        return reqq.add_req_queue(self.request_queue, img2imgreq, "img2img")
+
+    def queue_query_result(self, query: models.QueryData):
+        return reqq.get_result(query.request_id, self.request_queue, self.monitor.sd_app)
 
     def img2imgapi(self, img2imgreq: models.StableDiffusionImg2ImgProcessingAPI):
         init_images = img2imgreq.init_images

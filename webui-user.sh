@@ -10,16 +10,16 @@
 #clone_dir="stable-diffusion-webui"
 
 # Commandline arguments for webui.py, for example: export COMMANDLINE_ARGS="--medvram --opt-split-attention"
-export COMMANDLINE_ARGS="--api --listen"
+export COMMANDLINE_ARGS="--theme dark --xformers --enable-insecure-extension-access --api --listen --port 22164 --server-name 0.0.0.0"
 
 # python3 executable
-#python_cmd="python3"
+python_cmd="python3"
 
 # git executable
 #export GIT="git"
 
 # python3 venv without trailing slash (defaults to ${install_dir}/${clone_dir}/venv)
-#venv_dir="venv"
+venv_dir="-"
 
 # script to launch to start the app
 #export LAUNCH_SCRIPT="launch.py"
@@ -46,4 +46,3 @@ export COMMANDLINE_ARGS="--api --listen"
 #export NO_TCMALLOC="True"
 
 ###########################################
-export COMMANDLINE_ARGS="--theme dark --xformers --enable-insecure-extension-access --listen"
