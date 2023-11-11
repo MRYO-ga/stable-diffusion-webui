@@ -2,10 +2,13 @@ import base64
 import io
 import os
 import time
+import re
 import datetime
 import uvicorn
 import ipaddress
 import requests
+import uuid
+import json
 import gradio as gr
 from threading import Lock
 from io import BytesIO
@@ -14,6 +17,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
+from fastapi import UploadFile, File
 from secrets import compare_digest
 
 import modules.shared as shared
@@ -37,6 +41,61 @@ from app_manager import reqq
 
 import queue
 from app_manager.reqq import QueueMonitor
+
+from sqlORM import sql_model, database
+from sqlalchemy.orm import Session
+from sqlORM.database import SessionLocal
+from sqlORM.sql_model import UserSqlData
+from launch import project_root
+
+def is_base64(s):
+    if not isinstance(s, str):
+        return False
+    pattern = '^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$'
+    return re.fullmatch(pattern, s) is not None
+
+def process_data(item, user_id, save_directory, image_paths, json_data, key=None):
+    if isinstance(item, dict):
+        for key, value in item.items():
+            process_data(value, user_id, save_directory, image_paths, json_data, key)
+    elif isinstance(item, list):
+        json_list = []
+        for element in item:
+            if isinstance(element, str) and is_base64(element) and len(element) > 1000:
+                print(element[:10])
+                print(element[-10:])
+                img_data = base64.b64decode(element)
+                img_filename = f"{user_id}_image_{key if key else 0}_{len(element)}.jpg"
+                full_img_path = os.path.join(save_directory, img_filename)  # 生成完整的文件路径
+                with open(full_img_path, "wb") as img_file:
+                    img_file.write(img_data)
+                image_paths.append(full_img_path)
+            else:
+            #     process_data(element, user_id, save_directory, image_paths, list_item)
+                json_list.append(element)
+        if key:
+            json_data[key] = json_list
+        else:
+            print("list none key")
+        # else:
+        #     json_data.append(json_list)
+    else:
+        if isinstance(item, str) and is_base64(item) and len(item) > 1000:
+            print(item[:10])
+            print(item[-10:])
+            img_data = base64.b64decode(item)
+            img_filename = f"{user_id}_image_{key if key else 0}_{len(item)}.jpg"
+            full_img_path = os.path.join(save_directory, img_filename)  # 生成完整的文件路径
+            with open(full_img_path, "wb") as img_file:
+                img_file.write(img_data)
+            image_paths.append(full_img_path)
+        else:
+            if key:
+                print("save dict:", key, item)
+                json_data[key] = item
+            else:
+                print("no key str")
+                # json_data.append(item)
 
 def script_name_to_index(name, scripts):
     try:
@@ -218,6 +277,7 @@ class Api:
         api_middleware(self.app)
         self.add_api_route("/sdapi/v1/queue-process", self.queue_process_api, methods=["POST"], status_code=201)
         self.add_api_route("/sdapi/v1/queue-query-result", self.queue_query_result, methods=["POST"], status_code=201)
+        self.add_api_route("/sdapi/v1/get-user-data", self.get_user_data, methods=["POST"], status_code=201)
         self.add_api_route("/sdapi/v1/txt2img", self.text2imgapi, methods=["POST"], response_model=models.TextToImageResponse)
         self.add_api_route("/sdapi/v1/img2img", self.img2imgapi, methods=["POST"], response_model=models.ImageToImageResponse)
         self.add_api_route("/sdapi/v1/extra-single-image", self.extras_single_image_api, methods=["POST"], response_model=models.ExtrasSingleImageResponse)
@@ -322,6 +382,13 @@ class Api:
                     script_args[script.args_from:script.args_to] = ui_default_values
         return script_args
 
+    def get_db():
+        db = database.SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
     def init_script_args(self, request, default_script_args, selectable_scripts, selectable_idx, script_runner):
         script_args = default_script_args.copy()
         # position 0 in script_arg is the idx+1 of the selectable script that is going to be run when using scripts.scripts_*2img.run()
@@ -395,11 +462,81 @@ class Api:
 
         return models.TextToImageResponse(images=b64images, parameters=vars(txt2imgreq), info=processed.js())
 
-    def queue_process_api(self, img2imgreq: models.StableDiffusionImg2ImgProcessingAPI):
-        return reqq.add_req_queue(self.request_queue, img2imgreq, "img2img")
+    async def queue_process_api(
+        self,
+        img2imgreq: models.StableDiffusionImg2ImgProcessingAPI,
+        db: Session = Depends(get_db)
+        ):
+
+        request_id = str(uuid.uuid4())
+        temp_request = {
+            "type": "img2img",
+            "payload": img2imgreq,
+            "request_id": request_id,
+            "status": "pending"
+        }
+        reqq.add_req_queue(self.request_queue, temp_request)
+
+        user_id = img2imgreq.user_id
+        images_dir = os.path.join(project_root, 'sd_make_images')
+        os.makedirs(images_dir, exist_ok=True)
+
+        all_save_image_path = []
+        processed_json_data = {}
+        process_data(img2imgreq.dict(), user_id, images_dir, all_save_image_path, processed_json_data, None)
+
+        print("保存的图片路径：", all_save_image_path)
+        json_string = json.dumps(processed_json_data)
+        print(json_string)
+        # 处理数据库操作
+        print("数据库信息：", user_id, request_id)
+        db_task = sql_model.UserSqlData(
+            user_id=user_id,
+            task_id=request_id,
+            main_image_path=all_save_image_path[0] if all_save_image_path else None,
+            roop_image_path=all_save_image_path[1] if len(all_save_image_path) > 1 else None,
+            img2imgreq_data=json_string
+        )
+        db.add(db_task)
+        db.commit()
+        db.refresh(db_task)
+        if db_task.id:
+            print("保存成功")
+        else:
+            print("保存失败，没有生成 ID")
+
+        return {
+            "request_id": request_id,
+            "status": "pending",
+            "type": "img2img"
+        }
 
     def queue_query_result(self, query: models.QueryData):
         return reqq.get_result(query.request_id, self.request_queue, self.monitor.ad_api_handle)
+
+    async def get_user_data(self, query: models.QueryData):
+        db = SessionLocal()
+        try:
+            print("获取数据库信息：", query.user_id, query.request_id)
+            # 查询数据库中符合条件的记录
+            records = db.query(UserSqlData).filter(UserSqlData.user_id == query.user_id).all()
+
+            if not records:
+                raise HTTPException(status_code=404, detail="User data not found")
+
+            # 根据需求构造返回数据
+            result = []
+            for record in records:
+                result.append({
+                    "user_id": record.user_id,
+                    "main_image_path": record.main_image_path,
+                    "roop_image_path": record.roop_image_path,
+                    "img2imgreq_data": record.img2imgreq_data,
+                })
+        finally:
+            db.close()
+
+        return {"data": result}
 
     def img2imgapi(self, img2imgreq: models.StableDiffusionImg2ImgProcessingAPI):
         init_images = img2imgreq.init_images

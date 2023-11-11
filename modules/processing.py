@@ -1344,6 +1344,7 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
 
 @dataclass(repr=False)
 class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
+    user_id: str = None
     init_images: list = None
     resize_mode: int = 0
     denoising_strength: float = 0.75

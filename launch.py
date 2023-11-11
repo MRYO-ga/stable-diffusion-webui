@@ -1,5 +1,8 @@
 from modules import launch_utils
+from sqlORM.database import engine
+from sqlORM import sql_model
 
+sql_model.Base.metadata.create_all(bind=engine)
 args = launch_utils.args
 python = launch_utils.python
 git = launch_utils.git
@@ -22,7 +25,7 @@ run_extension_installer = launch_utils.run_extension_installer
 prepare_environment = launch_utils.prepare_environment
 configure_for_tests = launch_utils.configure_for_tests
 start = launch_utils.start
-
+project_root = '/home/vipuser/code/stable_diffusion_webui'
 
 def main():
     if args.dump_sysinfo:

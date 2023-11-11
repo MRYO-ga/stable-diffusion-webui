@@ -117,6 +117,7 @@ StableDiffusionImg2ImgProcessingAPI = PydanticModelGenerator(
     StableDiffusionProcessingImg2Img,
     [
         {"key": "sampler_index", "type": str, "default": "Euler"},
+        {"key": "user_id", "type": str, "default": "userName"},
         {"key": "init_images", "type": list, "default": None},
         {"key": "denoising_strength", "type": float, "default": 0.75},
         {"key": "mask", "type": str, "default": None},
@@ -131,6 +132,7 @@ StableDiffusionImg2ImgProcessingAPI = PydanticModelGenerator(
 
 class QueryData(BaseModel):
     request_id: str
+    user_id: str
 
 class TextToImageResponse(BaseModel):
     images: List[str] = Field(default=None, title="Image", description="The generated image in base64 format.")

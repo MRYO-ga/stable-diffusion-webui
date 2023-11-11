@@ -1,14 +1,48 @@
-import uuid
 import threading
 import time
 import copy
+import base64
+import os
 from fastapi import HTTPException
 from modules import api
+from sqlORM import sql_model, database
+from sqlORM.database import SessionLocal
+from sqlORM.sql_model import UserSqlData
+from launch import project_root
 
 current_request = {}
 final_results = {}
 current_options = {}
 
+def save_to_sql(request_id, res):
+    db = SessionLocal()
+    try:
+        print("获取数据库信息：", request_id)
+
+        records = db.query(UserSqlData).filter(UserSqlData.task_id == request_id).all()
+        image_list = res.images
+
+        # 遍历图像列表并保存每个图像
+        if records:
+            for idx, image_data_base64 in enumerate(image_list):
+                images_dir = os.path.join(os.path.join(project_root, 'sd_make_images'), 'output')
+                os.makedirs(images_dir, exist_ok=True)
+
+                image_data = base64.b64decode(image_data_base64)
+                for record in records:
+                    img_filename = f"image_{record.user_id}_{record.task_id}_inx_{idx}.jpg"  # 使用 record
+                    full_img_path = os.path.join(images_dir, img_filename)  # 生成完整的文件路径
+                    with open(full_img_path, "wb") as img_file:
+                        img_file.write(image_data)
+                    # 更新记录的图像路径信息
+                    record.output_image_path = full_img_path
+                # 提交更新到数据库
+                db.commit()
+                print("输出路径更新成功")
+        else:
+            print("未找到匹配的记录")
+    finally:
+        db.close()
 
 class QueueMonitor:
     def __init__(self, q, ad_api_handle):
@@ -66,22 +100,9 @@ def start_process_queue(request_que, ad_api_handle):
                 current_request["status"] = "finishing"
 
 
-def add_req_queue(requests_queue, payload, type):
-    request_id = str(uuid.uuid4())
-    temp_request = {
-        "type": type,
-        "payload": payload,
-        "request_id": request_id,
-        "status": "pending"
-    }
+def add_req_queue(requests_queue, temp_request):
     requests_queue.put(temp_request)
-    print("add request into queue, pending", request_id)
-    return {
-        "request_id": request_id,
-        "status": "pending",
-        "type": type
-    }
-
+    print("request in queue, request id:", temp_request['request_id'])
 
 def check_variable_in_queue(q, var):
     queue_as_list = list(q.queue)
@@ -98,9 +119,9 @@ def check_variable_in_queue(q, var):
 
 def get_result(request_id, requests_queue, ad_api_handle):
     global final_results
-    print("final_results", final_results.keys(), request_id)
     if (request_id in final_results):
         print("Found final result", request_id)
+        save_to_sql(request_id, final_results[request_id]["result"])
         return final_results[request_id]
     elif (request_id == current_request.get("request_id")):
         res = ad_api_handle.progressapi()
