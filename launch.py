@@ -1,6 +1,8 @@
 from modules import launch_utils
 from sqlORM.database import engine
 from sqlORM import sql_model
+from sqlORM.database import SessionLocal
+from sqlORM.sql_model import UserSqlData
 
 sql_model.Base.metadata.create_all(bind=engine)
 args = launch_utils.args
@@ -28,6 +30,24 @@ start = launch_utils.start
 project_root = '/home/vipuser/code/stable_diffusion_webui'
 
 def main():
+    db = SessionLocal()
+    try:
+        # 查询所有 status 为 "pending" 的记录
+        pending_records = db.query(UserSqlData).filter(UserSqlData.request_status == "pending").all()
+
+        for record in pending_records:
+            db.delete(record)
+
+        # 提交更改
+        db.commit()
+    except Exception as e:
+        # 处理数据库操作中的错误
+        db.rollback()
+        print("清空数据时发生错误：", str(e))
+    finally:
+        # 关闭数据库会话
+        db.close()
+
     if args.dump_sysinfo:
         filename = launch_utils.dump_sysinfo()
 

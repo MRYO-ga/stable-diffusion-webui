@@ -278,6 +278,7 @@ class Api:
         self.add_api_route("/sdapi/v1/queue-process", self.queue_process_api, methods=["POST"], status_code=201)
         self.add_api_route("/sdapi/v1/queue-query-result", self.queue_query_result, methods=["POST"], status_code=201)
         self.add_api_route("/sdapi/v1/get-user-data", self.get_user_data, methods=["POST"], status_code=201)
+        self.add_api_route("/sdapi/v1/query-sql-data-by-dict", self.query_sql_data_by_dict, methods=["POST"], status_code=201)
         self.add_api_route("/sdapi/v1/txt2img", self.text2imgapi, methods=["POST"], response_model=models.TextToImageResponse)
         self.add_api_route("/sdapi/v1/img2img", self.img2imgapi, methods=["POST"], response_model=models.ImageToImageResponse)
         self.add_api_route("/sdapi/v1/extra-single-image", self.extras_single_image_api, methods=["POST"], response_model=models.ExtrasSingleImageResponse)
@@ -462,6 +463,29 @@ class Api:
 
         return models.TextToImageResponse(images=b64images, parameters=vars(txt2imgreq), info=processed.js())
 
+    async def query_sql_data_by_dict(self, query: models.QueryData):
+        db = SessionLocal()
+        try:
+            # 构建查询条件
+            filters = []
+            for key, value in query.sql_query.items():
+                filters.append(getattr(UserSqlData, key) == value)
+            
+            # 执行查询
+            query_result = db.query(UserSqlData).filter(*filters).all()
+            
+            if not query_result:
+                raise HTTPException(status_code=404, detail="User data not found")
+
+            db.close()
+            return query_result
+        except Exception as e:
+            # 处理数据库查询错误
+            print("查询数据时发生错误：", str(e))
+            db.close()
+            return None
+
+
     async def queue_process_api(
         self,
         img2imgreq: models.StableDiffusionImg2ImgProcessingAPI,
@@ -472,8 +496,9 @@ class Api:
         temp_request = {
             "type": "img2img",
             "payload": img2imgreq,
+            "status": "pending",
             "request_id": request_id,
-            "status": "pending"
+            "user_id": img2imgreq.user_id
         }
         reqq.add_req_queue(self.request_queue, temp_request)
 
@@ -492,14 +517,15 @@ class Api:
         print("数据库信息：", user_id, request_id)
         db_task = sql_model.UserSqlData(
             user_id=user_id,
-            task_id=request_id,
+            type="img2img",
+            request_id=request_id,
+            request_status="pending",
             main_image_path=all_save_image_path[0] if all_save_image_path else None,
             roop_image_path=all_save_image_path[1] if len(all_save_image_path) > 1 else None,
             img2imgreq_data=json_string
         )
         db.add(db_task)
         db.commit()
-        db.refresh(db_task)
         if db_task.id:
             print("保存成功")
         else:

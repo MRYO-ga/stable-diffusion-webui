@@ -133,6 +133,7 @@ StableDiffusionImg2ImgProcessingAPI = PydanticModelGenerator(
 class QueryData(BaseModel):
     request_id: str
     user_id: str
+    sql_query: dict
 
 class TextToImageResponse(BaseModel):
     images: List[str] = Field(default=None, title="Image", description="The generated image in base64 format.")

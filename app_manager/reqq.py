@@ -9,18 +9,19 @@ from sqlORM import sql_model, database
 from sqlORM.database import SessionLocal
 from sqlORM.sql_model import UserSqlData
 from launch import project_root
+from modules.progress import ProgressRequest
 
 current_request = {}
 final_results = {}
 current_options = {}
 
-def save_to_sql(request_id, res):
+def save_image_to_sql(request):
     db = SessionLocal()
     try:
-        print("获取数据库信息：", request_id)
+        print("save_image_to_sql 获取数据库信息：", request.get("request_id"))
 
-        records = db.query(UserSqlData).filter(UserSqlData.task_id == request_id).all()
-        image_list = res.images
+        records = db.query(UserSqlData).filter(UserSqlData.request_id == request.get("request_id")).all()
+        image_list = request.get("result").images
 
         # 遍历图像列表并保存每个图像
         if records:
@@ -30,15 +31,31 @@ def save_to_sql(request_id, res):
 
                 image_data = base64.b64decode(image_data_base64)
                 for record in records:
-                    img_filename = f"image_{record.user_id}_{record.task_id}_inx_{idx}.jpg"  # 使用 record
+                    img_filename = f"image_{record.user_id}_{record.request_id}_inx_{idx}.jpg"  # 使用 record
                     full_img_path = os.path.join(images_dir, img_filename)  # 生成完整的文件路径
                     with open(full_img_path, "wb") as img_file:
                         img_file.write(image_data)
-                    # 更新记录的图像路径信息
+
                     record.output_image_path = full_img_path
+                    record.request_status = request.get("status")
                 # 提交更新到数据库
                 db.commit()
                 print("输出路径更新成功")
+        else:
+            print("未找到匹配的记录")
+    finally:
+        db.close()
+
+def update_request_status_sql(res):
+    db = SessionLocal()
+    try:
+        print("update_to_sql 获取数据库信息：", res.get("request_id"))
+        records = db.query(UserSqlData).filter(UserSqlData.request_id == res.get("request_id")).all()
+        if records:
+            for record in records:
+                record.request_status = res.get("status")
+            # 提交更新到数据库
+            db.commit()
         else:
             print("未找到匹配的记录")
     finally:
@@ -76,29 +93,23 @@ def start_process_queue(request_que, ad_api_handle):
         if not request_que.empty():
             current_request = request_que.get()
             current_request["status"] = "processing"
-            print("current_request is processing:", current_request.get(
-                "request_id"), current_request.get("status"), '\n')
-            request_options = current_request.get("options")
+            update_request_status_sql(current_request)
+            print("current_request is processing:", current_request["request_id"])
+            # request_options = current_request.get("options")
             # compare_options(request_options)
             if (current_request.get("type") == "txt2img"):
                 res = ad_api_handle.text2imgapi(current_request.get("payload"))
-                final_request = copy.deepcopy(current_request)
-                final_request["status"] = "done"
-                final_request["result"] = res
-                final_results[final_request.get("request_id")] = final_request
-                print("request is complete", final_request.get(
-                    "request_id"), final_request.get("status"))
-                current_request["status"] = "finishing"
-            if (current_request.get("type") == "img2img"):
+            else:
                 res = ad_api_handle.img2imgapi(current_request.get("payload"))
-                final_request = copy.deepcopy(current_request)
-                final_request["status"] = "done"
-                final_request["result"] = res
-                final_results[final_request.get("request_id")] = final_request
-                print("request is complete", final_request.get(
-                    "request_id"), final_request.get("status"))
-                current_request["status"] = "finishing"
+            current_request["payload"] = ''
+            final_request = copy.deepcopy(current_request)
+            final_request["status"] = "finishing"
+            final_request["result"] = res
+            save_image_to_sql(final_request)
 
+            #总输出列表
+            final_results[final_request["request_id"]] = final_request
+            print("request is complete", final_request["request_id"])
 
 def add_req_queue(requests_queue, temp_request):
     requests_queue.put(temp_request)
@@ -116,22 +127,29 @@ def check_variable_in_queue(q, var):
         print(f"{var} is not in the queue.")
         return -1
 
-
 def get_result(request_id, requests_queue, ad_api_handle):
     global final_results
     if (request_id in final_results):
         print("Found final result", request_id)
-        save_to_sql(request_id, final_results[request_id]["result"])
+        # save_image_to_sql(request_id, final_results[request_id]["result"])
         return final_results[request_id]
     elif (request_id == current_request.get("request_id")):
-        res = ad_api_handle.progressapi()
-        temp_res = current_request
-        temp_res["result"] = res
-        return temp_res
+        return {"status": "processing", "request_id": request_id}
+        # progress_request = ProgressRequest(
+        #     id_task="your_task_id",  # 任务ID
+        #     id_live_preview=123,     # 实时预览图像ID，替换为实际的整数
+        #     live_preview=True        # 包括实时预览，可以根据需要设置为 True 或 False
+        # )
+        # res = ad_api_handle.progressapi(progress_request)
+        # temp_res = current_request
+        # temp_res["result"] = res
+        # return temp_res
     else:
         index = check_variable_in_queue(requests_queue, request_id)
         if (index > -1):
-            return {"status": "pending", "request_id": request_id, "pending_count": index+1}
+            return {"status": "pending",
+                    "request_id": request_id,
+                    "pending_count": index+1}
         else:
             return {"status": "not_found"}
 
