@@ -33,9 +33,12 @@ def main():
     db = SessionLocal()
     try:
         # 查询所有 status 为 "pending" 的记录
-        pending_records = db.query(UserSqlData).filter(UserSqlData.request_status == "pending").all()
-
-        for record in pending_records:
+        # pending_records = db.query(UserSqlData).filter(UserSqlData.request_status == "pending").all()
+        pending_and_processing_records = db.query(UserSqlData).filter(
+            UserSqlData.request_status.in_(["pending", "processing"])
+        ).all()
+        
+        for record in pending_and_processing_records:
             db.delete(record)
 
         # 提交更改

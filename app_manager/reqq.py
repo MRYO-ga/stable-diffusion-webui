@@ -120,7 +120,7 @@ def add_req_queue(requests_queue, temp_request):
         try:
             requests_queue.put(temp_request, timeout=10)
             return 0
-        except requests_queue.Full:
+        except Full:
             print("队列已满，重试...")
             try_cnt = try_cnt + 1
             if (try_cnt > max_try_cnt):
