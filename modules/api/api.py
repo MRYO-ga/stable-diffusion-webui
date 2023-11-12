@@ -41,6 +41,7 @@ from app_manager import reqq
 
 import queue
 from app_manager.reqq import QueueMonitor
+from app_manager.reqq import max_queue_count
 
 from sqlORM import sql_model, database
 from sqlalchemy.orm import Session
@@ -91,7 +92,7 @@ def process_data(item, user_id, save_directory, image_paths, json_data, key=None
             image_paths.append(full_img_path)
         else:
             if key:
-                print("save dict:", key, item)
+                # print("save dict:", key, item)
                 json_data[key] = item
             else:
                 print("no key str")
@@ -258,6 +259,43 @@ def api_middleware(app: FastAPI):
     async def http_exception_handler(request: Request, e: HTTPException):
         return handle_exception(request, e)
 
+def get_db():
+    db = database.SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+async def update_user_info_sql(img2imgreq, request_id, db: Session):
+    user_id = img2imgreq.user_id
+    images_dir = os.path.join(project_root, 'sd_make_images')
+    os.makedirs(images_dir, exist_ok=True)
+
+    all_save_image_path = []
+    processed_json_data = {}
+    process_data(img2imgreq.dict(), user_id, images_dir, all_save_image_path, processed_json_data, None)
+
+    print("保存的图片路径：", all_save_image_path)
+    json_string = json.dumps(processed_json_data)
+    # print(json_string)
+    # 处理数据库操作
+    print("保存用户信息：", user_id, request_id)
+    db_task = sql_model.UserSqlData(
+        user_id=user_id,
+        type="img2img",
+        request_id=request_id,
+        request_status="pending",
+        main_image_path=all_save_image_path[0] if all_save_image_path else None,
+        roop_image_path=all_save_image_path[1] if len(all_save_image_path) > 1 else None,
+        img2imgreq_data=json_string
+    )
+    db.add(db_task)
+    db.commit()
+    if db_task.id:
+        print("保存成功")
+    else:
+        print("保存失败，没有生成 ID")
+
 
 class Api:
     def __init__(self, app: FastAPI, queue_lock: Lock):
@@ -272,7 +310,7 @@ class Api:
         self.queue_lock = queue_lock
         
         # Create a QueueMonitor object with the Queue
-        self.request_queue = queue.Queue(20)
+        self.request_queue = queue.Queue(max_queue_count)
         self.monitor = QueueMonitor(self.request_queue, self)
         api_middleware(self.app)
         self.add_api_route("/sdapi/v1/queue-process", self.queue_process_api, methods=["POST"], status_code=201)
@@ -383,13 +421,6 @@ class Api:
                     script_args[script.args_from:script.args_to] = ui_default_values
         return script_args
 
-    def get_db():
-        db = database.SessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
     def init_script_args(self, request, default_script_args, selectable_scripts, selectable_idx, script_runner):
         script_args = default_script_args.copy()
         # position 0 in script_arg is the idx+1 of the selectable script that is going to be run when using scripts.scripts_*2img.run()
@@ -463,7 +494,7 @@ class Api:
 
         return models.TextToImageResponse(images=b64images, parameters=vars(txt2imgreq), info=processed.js())
 
-    async def query_sql_data_by_dict(self, query: models.QueryData):
+    def query_sql_data_by_dict(self, query: models.QueryData):
         db = SessionLocal()
         try:
             # 构建查询条件
@@ -485,7 +516,6 @@ class Api:
             db.close()
             return None
 
-
     async def queue_process_api(
         self,
         img2imgreq: models.StableDiffusionImg2ImgProcessingAPI,
@@ -500,47 +530,24 @@ class Api:
             "request_id": request_id,
             "user_id": img2imgreq.user_id
         }
-        reqq.add_req_queue(self.request_queue, temp_request)
-
-        user_id = img2imgreq.user_id
-        images_dir = os.path.join(project_root, 'sd_make_images')
-        os.makedirs(images_dir, exist_ok=True)
-
-        all_save_image_path = []
-        processed_json_data = {}
-        process_data(img2imgreq.dict(), user_id, images_dir, all_save_image_path, processed_json_data, None)
-
-        print("保存的图片路径：", all_save_image_path)
-        json_string = json.dumps(processed_json_data)
-        print(json_string)
-        # 处理数据库操作
-        print("数据库信息：", user_id, request_id)
-        db_task = sql_model.UserSqlData(
-            user_id=user_id,
-            type="img2img",
-            request_id=request_id,
-            request_status="pending",
-            main_image_path=all_save_image_path[0] if all_save_image_path else None,
-            roop_image_path=all_save_image_path[1] if len(all_save_image_path) > 1 else None,
-            img2imgreq_data=json_string
-        )
-        db.add(db_task)
-        db.commit()
-        if db_task.id:
-            print("保存成功")
-        else:
-            print("保存失败，没有生成 ID")
-
+        ret = reqq.add_req_queue(self.request_queue, temp_request)
+        if (ret < 0):
+            return {
+                "request_id": request_id,
+                "error_info": "queue full",
+                "type": "img2img"
+            }
+        await update_user_info_sql(img2imgreq, request_id, db)
         return {
             "request_id": request_id,
             "status": "pending",
-            "type": "img2img"
+            "type": "img2img",
         }
 
     def queue_query_result(self, query: models.QueryData):
         return reqq.get_result(query.request_id, self.request_queue, self.monitor.ad_api_handle)
 
-    async def get_user_data(self, query: models.QueryData):
+    def get_user_data(self, query: models.QueryData):
         db = SessionLocal()
         try:
             print("获取数据库信息：", query.user_id, query.request_id)
@@ -604,6 +611,11 @@ class Api:
         with self.queue_lock:
             with closing(StableDiffusionProcessingImg2Img(sd_model=shared.sd_model, **args)) as p:
                 p.init_images = [decode_base64_to_image(x) for x in init_images]
+                image_sizes = [(image.size) for image in p.init_images]
+                for i, (width, height) in enumerate(image_sizes):
+                    p.width = width
+                    p.height = height
+                    print("image w:h = ", width, height)
                 p.is_api = True
                 p.scripts = script_runner
                 p.outpath_grids = opts.outdir_img2img_grids

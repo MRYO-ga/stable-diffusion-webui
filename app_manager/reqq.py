@@ -14,6 +14,7 @@ from modules.progress import ProgressRequest
 current_request = {}
 final_results = {}
 current_options = {}
+max_queue_count = 10
 
 def save_image_to_sql(request):
     db = SessionLocal()
@@ -76,12 +77,8 @@ class QueueMonitor:
         while True:
             current_size = self.get_queue_size()
             if current_size > 0:
-                self.queue_has_items()
+                start_process_queue(self.q, self.ad_api_handle)
             time.sleep(1)  # check the queue every second
-
-    def queue_has_items(self):
-        print(f"Queue has items. Current size: {self.get_queue_size()}")
-        self.callback_function()
 
     def callback_function(self):
         start_process_queue(self.q, self.ad_api_handle)
@@ -103,17 +100,33 @@ def start_process_queue(request_que, ad_api_handle):
                 res = ad_api_handle.img2imgapi(current_request.get("payload"))
             current_request["payload"] = ''
             final_request = copy.deepcopy(current_request)
+            current_request = {}
             final_request["status"] = "finishing"
             final_request["result"] = res
             save_image_to_sql(final_request)
 
             #总输出列表
+            if (len(final_results) > max_queue_count):
+                final_results.popitem()
+                print("waring:输出列表已满")
             final_results[final_request["request_id"]] = final_request
             print("request is complete", final_request["request_id"])
 
 def add_req_queue(requests_queue, temp_request):
-    requests_queue.put(temp_request)
+    max_try_cnt = 3
+    try_cnt = 0
     print("request in queue, request id:", temp_request['request_id'])
+    while True:
+        try:
+            requests_queue.put(temp_request, timeout=10)
+            return 0
+        except requests_queue.Full:
+            print("队列已满，重试...")
+            try_cnt = try_cnt + 1
+            if (try_cnt > max_try_cnt):
+                return -1
+            time.sleep(1)  # 等待一段时间后再重试
+
 
 def check_variable_in_queue(q, var):
     queue_as_list = list(q.queue)
@@ -129,11 +142,15 @@ def check_variable_in_queue(q, var):
 
 def get_result(request_id, requests_queue, ad_api_handle):
     global final_results
+    # print("Found final result and current_request", request_id, current_request.get("request_id"))
     if (request_id in final_results):
         print("Found final result", request_id)
         # save_image_to_sql(request_id, final_results[request_id]["result"])
-        return final_results[request_id]
+        results = copy.deepcopy(final_results[request_id])
+        del final_results[request_id]
+        return results
     elif (request_id == current_request.get("request_id")):
+        print("processing", request_id)
         return {"status": "processing", "request_id": request_id}
         # progress_request = ProgressRequest(
         #     id_task="your_task_id",  # 任务ID
@@ -146,12 +163,13 @@ def get_result(request_id, requests_queue, ad_api_handle):
         # return temp_res
     else:
         index = check_variable_in_queue(requests_queue, request_id)
-        if (index > -1):
+        if (index < 0):
             return {"status": "pending",
                     "request_id": request_id,
                     "pending_count": index+1}
         else:
-            return {"status": "not_found"}
+            return {"status": "not_found",
+                    "request_id": request_id}
 
 
 # def compare_options(options):
