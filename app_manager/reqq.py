@@ -10,6 +10,7 @@ from sqlORM.database import SessionLocal
 from sqlORM.sql_model import UserSqlData
 from launch import project_root
 from modules.progress import ProgressRequest
+from queue import Full
 
 current_request = {}
 final_results = {}
@@ -39,9 +40,10 @@ def save_image_to_sql(request):
 
                     record.output_image_path = full_img_path
                     record.request_status = request.get("status")
+                    record.process_time = request.get("process_time")
                 # 提交更新到数据库
                 db.commit()
-                print("输出路径更新成功")
+                print("输出图像成功")
         else:
             print("未找到匹配的记录")
     finally:
@@ -55,6 +57,7 @@ def update_request_status_sql(res):
         if records:
             for record in records:
                 record.request_status = res.get("status")
+                record.befor_process_time = res.get("befor_process_time")
             # 提交更新到数据库
             db.commit()
         else:
@@ -78,7 +81,7 @@ class QueueMonitor:
             current_size = self.get_queue_size()
             if current_size > 0:
                 start_process_queue(self.q, self.ad_api_handle)
-            time.sleep(1)  # check the queue every second
+            time.sleep(0.2)  # check the queue every second
 
     def callback_function(self):
         start_process_queue(self.q, self.ad_api_handle)
@@ -89,6 +92,9 @@ def start_process_queue(request_que, ad_api_handle):
     if ((current_request.get("status") != "pending") and (current_request.get("status") != "processing")):
         if not request_que.empty():
             current_request = request_que.get()
+            start_time = time.time()
+            enqueue_time = current_request.get("enqueue_time", 0)
+            current_request["befor_process_time"] = start_time - enqueue_time
             current_request["status"] = "processing"
             update_request_status_sql(current_request)
             print("current_request is processing:", current_request["request_id"])
@@ -103,10 +109,11 @@ def start_process_queue(request_que, ad_api_handle):
             current_request = {}
             final_request["status"] = "finishing"
             final_request["result"] = res
+            final_request["process_time"] = time.time() - start_time
             save_image_to_sql(final_request)
 
             #总输出列表
-            if (len(final_results) > max_queue_count):
+            if (len(final_results) >= max_queue_count):
                 final_results.popitem()
                 print("waring:输出列表已满")
             final_results[final_request["request_id"]] = final_request
@@ -122,8 +129,14 @@ def add_req_queue(requests_queue, temp_request):
             return 0
         except Full:
             print("队列已满，重试...")
-            try_cnt = try_cnt + 1
-            if (try_cnt > max_try_cnt):
+            try:
+                item = requests_queue.get_nowait()
+                print("从队列中移除数据:", item)
+            except Empty:
+                pass  # 如果队列为空，则忽略异常
+            
+            try_cnt += 1
+            if try_cnt > max_try_cnt:
                 return -1
             time.sleep(1)  # 等待一段时间后再重试
 

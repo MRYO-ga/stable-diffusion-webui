@@ -99,8 +99,8 @@ def process_data(item, user_id, save_directory, image_paths, json_data, key=None
         # else:
         #     json_data.append(json_list)
     else:
-        is_valid, base64_data = is_base64_data_uri(element)
-        if isinstance(element, str) and is_valid and len(element) > 1000:
+        is_valid, base64_data = is_base64_data_uri(item)
+        if isinstance(item, str) and is_valid and len(item) > 1000:
             print(item[:10])
             print(item[-10:])
             img_data = base64.b64decode(item)
@@ -301,7 +301,7 @@ async def update_user_info_sql(img2imgreq, request_id, db: Session):
     print("保存用户信息：", user_id, request_id)
     db_task = sql_model.UserSqlData(
         user_id=user_id,
-        type="img2img",
+        image_type="img2img",
         request_id=request_id,
         request_status="pending",
         main_image_path=all_save_image_path[0] if all_save_image_path else None,
@@ -540,23 +540,26 @@ class Api:
         img2imgreq: models.StableDiffusionImg2ImgProcessingAPI,
         db: Session = Depends(get_db)
         ):
-
+        start_time = time.time()
         request_id = str(uuid.uuid4())
         temp_request = {
             "type": "img2img",
             "payload": img2imgreq,
             "status": "pending",
             "request_id": request_id,
-            "user_id": img2imgreq.user_id
+            "user_id": img2imgreq.user_id,
+            "enqueue_time": start_time
         }
         ret = reqq.add_req_queue(self.request_queue, temp_request)
         if (ret < 0):
             return {
                 "request_id": request_id,
-                "error_info": "queue full",
+                "error_info": "retry error, queue full",
                 "type": "img2img"
             }
         await update_user_info_sql(img2imgreq, request_id, db)
+        elapsed_time = time.time() - start_time
+        print("queue_process_api handle time:", elapsed_time)
         return {
             "request_id": request_id,
             "status": "pending",
