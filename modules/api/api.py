@@ -55,6 +55,23 @@ def is_base64(s):
     pattern = '^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$'
     return re.fullmatch(pattern, s) is not None
 
+def is_base64_data_uri(s):
+    # 检查字符串是否以 "data:image/" 开头
+    if not isinstance(s, str) or not s.startswith("data:image/"):
+        return False, s  # 保持原始的 s 不变
+    
+    # 检查 "base64," 是否存在
+    if "base64," in s:
+        # 提取 Base64 部分
+        s = s.split("base64,")[1]
+        # 正则表达式用来匹配 base64 编码的模式
+        pattern = '^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$'
+        # 检查 Base64 部分是否匹配模式
+        is_valid_base64 = re.fullmatch(pattern, s) is not None
+        return is_valid_base64, s
+    else:
+        return False, s  # 保持原始的 s 不变
+
 def process_data(item, user_id, save_directory, image_paths, json_data, key=None):
     if isinstance(item, dict):
         for key, value in item.items():
@@ -62,10 +79,11 @@ def process_data(item, user_id, save_directory, image_paths, json_data, key=None
     elif isinstance(item, list):
         json_list = []
         for element in item:
-            if isinstance(element, str) and is_base64(element) and len(element) > 1000:
+            is_valid, base64_data = is_base64_data_uri(element)
+            if isinstance(element, str) and is_valid and len(element) > 1000:
                 print(element[:10])
                 print(element[-10:])
-                img_data = base64.b64decode(element)
+                img_data = base64.b64decode(base64_data)
                 img_filename = f"{user_id}_image_{key if key else 0}_{len(element)}.jpg"
                 full_img_path = os.path.join(save_directory, img_filename)  # 生成完整的文件路径
                 with open(full_img_path, "wb") as img_file:
@@ -81,7 +99,8 @@ def process_data(item, user_id, save_directory, image_paths, json_data, key=None
         # else:
         #     json_data.append(json_list)
     else:
-        if isinstance(item, str) and is_base64(item) and len(item) > 1000:
+        is_valid, base64_data = is_base64_data_uri(element)
+        if isinstance(element, str) and is_valid and len(element) > 1000:
             print(item[:10])
             print(item[-10:])
             img_data = base64.b64decode(item)
