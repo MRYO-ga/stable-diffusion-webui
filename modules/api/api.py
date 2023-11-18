@@ -46,7 +46,7 @@ from app_manager.reqq import max_queue_count
 from sqlORM import sql_model, database
 from sqlalchemy.orm import Session
 from sqlORM.database import SessionLocal
-from sqlORM.sql_model import UserSqlData
+from sqlORM.sql_model import UserSqlData, PhotoImage
 from launch import project_root
 
 def is_base64(s):
@@ -531,6 +531,27 @@ class Api:
             return query_result
         except Exception as e:
             # 处理数据库查询错误
+            print("查询数据时发生错误：", str(e))
+            db.close()
+            return None
+
+    def query_photo_image_sql_data_by_dict(self, query: models.QueryData):
+        db = SessionLocal()
+        try:
+            # 构建查询条件
+            filters = []
+            for key, value in query.sql_query.items():
+                filters.append(getattr(PhotoImage, key) == value)
+
+            # 执行查询
+            query_result = db.query(PhotoImage).filter(*filters).all()
+
+            if not query_result:
+                raise HTTPException(status_code=404, detail="User data not found")
+
+            db.close()
+            return query_result
+        except Exception as e:
             print("查询数据时发生错误：", str(e))
             db.close()
             return None
