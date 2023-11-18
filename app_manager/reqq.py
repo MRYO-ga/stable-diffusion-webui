@@ -15,7 +15,7 @@ from queue import Full
 current_request = {}
 final_results = {}
 current_options = {}
-max_queue_count = 10
+max_queue_count = 30
 
 def save_image_to_sql(request):
     db = SessionLocal()
@@ -103,7 +103,30 @@ def start_process_queue(request_que, ad_api_handle):
             if (current_request.get("type") == "txt2img"):
                 res = ad_api_handle.text2imgapi(current_request.get("payload"))
             else:
-                res = ad_api_handle.img2imgapi(current_request.get("payload"))
+                import torch
+                max_retry = 2  # 设置最大重试次数
+
+                for _ in range(max_retry):
+                    try:
+                        res = ad_api_handle.img2imgapi(current_request.get("payload"))
+                        # 如果成功执行操作，可以在此处添加其他逻辑
+                        break  # 如果成功，跳出循环
+                    except RuntimeError as e:
+                        if "CUDA out of memory" in str(e):
+                            # 如果捕获到GPU内存不足异常，可以在此处添加处理逻辑
+                            print("GPU内存不足，正在重试...")
+                            torch.cuda.empty_cache()  # 清空GPU缓存
+                        else:
+                            print("异常错误...")
+                            raise e
+                else:
+                    # 如果发生其他运行时错误，可以选择处理或抛出
+                    print("GPU内存不足，跳过当前请求...")
+                    current_request["status"] = "CUDA out of memory"
+                    update_request_status_sql(current_request)
+                    current_request = {}
+                    torch.cuda.empty_cache()  # 清空GPU缓存
+                    return
             current_request["payload"] = ''
             final_request = copy.deepcopy(current_request)
             current_request = {}
@@ -147,17 +170,17 @@ def check_variable_in_queue(q, var):
     for i in queue_as_list:
         pending_requests.append(i.get("request_id"))
     if var in pending_requests:
-        print(f"{var} is in the queue.")
+        # print(f"{var} is in the queue.")
         return pending_requests.index(var)
     else:
-        print(f"{var} is not in the queue.")
+        # print(f"{var} is not in the queue.")
         return -1
 
 def get_result(request_id, requests_queue, ad_api_handle):
     global final_results
     # print("Found final result and current_request", request_id, current_request.get("request_id"))
     if (request_id in final_results):
-        print("Found final result", request_id)
+        print("Found final result", request_id, final_results[request_id]["status"])
         # save_image_to_sql(request_id, final_results[request_id]["result"])
         results = copy.deepcopy(final_results[request_id])
         del final_results[request_id]

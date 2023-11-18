@@ -11,6 +11,7 @@ if [[ $venv_dir == "-" ]]; then
 fi
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:32
 
 
 # If run from macOS, load defaults from webui-macos-env.sh

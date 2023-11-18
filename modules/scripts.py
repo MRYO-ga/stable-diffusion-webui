@@ -598,7 +598,11 @@ class ScriptRunner:
             return None
 
         script_args = args[script.args_from:script.args_to]
-        processed = script.run(p, *script_args)
+        
+        try:
+            processed = script.run(p, *script_args)
+        except RuntimeError as e:
+            raise e
 
         shared.total_tqdm.clear()
 

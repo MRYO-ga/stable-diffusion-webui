@@ -730,7 +730,9 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
         sd_models.apply_token_merging(p.sd_model, p.get_token_merging_ratio())
 
         res = process_images_inner(p)
-
+    except RuntimeError as e:
+        print("process_images_inner 异常错误...")
+        raise e
     finally:
         sd_models.apply_token_merging(p.sd_model, 0)
 
@@ -1370,7 +1372,7 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
 
     def __post_init__(self):
         super().__post_init__()
-
+        print("self.mask init ", self.mask, self.image_mask)
         self.image_mask = self.mask
         self.mask = None
         self.initial_noise_multiplier = opts.initial_noise_multiplier if self.initial_noise_multiplier is None else self.initial_noise_multiplier

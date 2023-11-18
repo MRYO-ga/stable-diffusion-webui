@@ -32,7 +32,7 @@ project_root = '/home/vipuser/code/stable_diffusion_webui'
 def main():
     db = SessionLocal()
     try:
-        # 查询所有 status 为 "pending" 的记录
+        # 查询所有 status 为 "pending或processing" 的记录
         # pending_records = db.query(UserSqlData).filter(UserSqlData.request_status == "pending").all()
         pending_and_processing_records = db.query(UserSqlData).filter(
             UserSqlData.request_status.in_(["pending", "processing"])

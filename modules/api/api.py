@@ -634,10 +634,12 @@ class Api:
             with closing(StableDiffusionProcessingImg2Img(sd_model=shared.sd_model, **args)) as p:
                 p.init_images = [decode_base64_to_image(x) for x in init_images]
                 image_sizes = [(image.size) for image in p.init_images]
+                max_pic_size = 2048
                 for i, (width, height) in enumerate(image_sizes):
-                    p.width = width
-                    p.height = height
-                    print("image w:h = ", width, height)
+                    scale_by = min(1, min(max_pic_size / width, max_pic_size / height))
+                    p.width = int(width * scale_by)
+                    p.height = int(height * scale_by)
+                    print("image w:h = ", p.width, p.height)
                 p.is_api = True
                 p.scripts = script_runner
                 p.outpath_grids = opts.outdir_img2img_grids
@@ -647,10 +649,17 @@ class Api:
                     shared.state.begin(job="scripts_img2img")
                     if selectable_scripts is not None:
                         p.script_args = script_args
-                        processed = scripts.scripts_img2img.run(p, *p.script_args) # Need to pass args as list here
+                        try:
+                            processed = scripts.scripts_img2img.run(p, *p.script_args) # Need to pass args as list here
+                            # 如果成功执行操作，可以在此处添加其他逻辑
+                        except RuntimeError as e:
+                            raise e
                     else:
                         p.script_args = tuple(script_args) # Need to pass args as tuple here
                         processed = process_images(p)
+                except RuntimeError as e:
+                    print("process_images 异常错误...")
+                    raise e
                 finally:
                     shared.state.end()
                     shared.total_tqdm.clear()
