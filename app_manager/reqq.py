@@ -11,6 +11,7 @@ from sqlORM.sql_model import UserSqlData
 from launch import project_root
 from modules.progress import ProgressRequest
 from queue import Full
+from datetime import datetime
 
 current_request = {}
 final_results = {}
@@ -29,6 +30,7 @@ def save_image_to_sql(request):
         if records:
             for idx, image_data_base64 in enumerate(image_list):
                 images_dir = os.path.join(os.path.join(project_root, 'sd_make_images'), 'output')
+                images_dir = os.path.join(images_dir, datetime.now().strftime("%Y%m%d"))
                 os.makedirs(images_dir, exist_ok=True)
 
                 image_data = base64.b64decode(image_data_base64)

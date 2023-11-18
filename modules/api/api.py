@@ -48,6 +48,7 @@ from sqlalchemy.orm import Session
 from sqlORM.database import SessionLocal
 from sqlORM.sql_model import UserSqlData, PhotoImage
 from launch import project_root
+from datetime import datetime
 
 def is_base64(s):
     if not isinstance(s, str):
@@ -288,6 +289,7 @@ def get_db():
 async def update_user_info_sql(img2imgreq, request_id, db: Session):
     user_id = img2imgreq.user_id
     images_dir = os.path.join(project_root, 'sd_make_images')
+    images_dir = os.path.join(images_dir, datetime.now().strftime("%Y%m%d"))
     os.makedirs(images_dir, exist_ok=True)
 
     all_save_image_path = []
