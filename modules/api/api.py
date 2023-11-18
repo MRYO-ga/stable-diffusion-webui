@@ -310,7 +310,7 @@ async def update_user_info_sql(img2imgreq, request_id, db: Session):
     )
     db.add(db_task)
     db.commit()
-    if db_task.id:
+    if db_task.user_id:
         print("保存成功")
     else:
         print("保存失败，没有生成 ID")

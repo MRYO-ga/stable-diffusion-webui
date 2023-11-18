@@ -207,7 +207,6 @@ def get_result(request_id, requests_queue, ad_api_handle):
             return {"status": "not_found",
                     "request_id": request_id}
 
-
 # def compare_options(options):
 #     global current_options
 #     is_change = False

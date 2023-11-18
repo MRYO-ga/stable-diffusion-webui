@@ -3,6 +3,10 @@ from sqlORM.database import engine
 from sqlORM import sql_model
 from sqlORM.database import SessionLocal
 from sqlORM.sql_model import UserSqlData
+from sqlalchemy.orm import Session
+from sqlORM.sql_model import PhotoImage
+from PIL import Image
+import os
 
 sql_model.Base.metadata.create_all(bind=engine)
 args = launch_utils.args
@@ -29,17 +33,43 @@ configure_for_tests = launch_utils.configure_for_tests
 start = launch_utils.start
 project_root = '/home/vipuser/code/stable_diffusion_webui'
 
+def find_images_in_directory(directory, db:Session):
+    """遍历指定目录，查找所有图片文件。"""
+    image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp']
+    for root, _, files in os.walk(directory):
+        for file in files:
+            if any(file.lower().endswith(ext) for ext in image_extensions):
+                try:
+                    img_path = os.path.join(root, file)
+                    existing_image = db.query(PhotoImage).filter(PhotoImage.path == img_path).first()
+                    with Image.open(img_path) as img:
+                        width, height = img.size
+                    file_size = os.path.getsize(img_path) // 1000
+                    if existing_image and existing_image.width == width and existing_image.height == height and existing_image.file_size == file_size:
+                        pass
+                    else:
+                        db_task = PhotoImage(
+                            path=img_path,
+                            file_size=file_size,
+                            width=width,
+                            height=height,
+                        )
+                        db.add(db_task)
+                except IOError:
+                    print(f"无法打开或读取文件：{img_path}")
+
 def main():
     db = SessionLocal()
     try:
         # 查询所有 status 为 "pending或processing" 的记录
-        # pending_records = db.query(UserSqlData).filter(UserSqlData.request_status == "pending").all()
         pending_and_processing_records = db.query(UserSqlData).filter(
             UserSqlData.request_status.in_(["pending", "processing"])
         ).all()
-        
+
         for record in pending_and_processing_records:
             db.delete(record)
+
+        find_images_in_directory('/home/vipuser/code/static/images', db)
 
         # 提交更改
         db.commit()
