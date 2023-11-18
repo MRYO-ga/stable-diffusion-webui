@@ -12,6 +12,7 @@ from launch import project_root
 from modules.progress import ProgressRequest
 from queue import Full
 from datetime import datetime
+import concurrent.futures
 
 current_request = {}
 final_results = {}
@@ -88,6 +89,16 @@ class QueueMonitor:
     def callback_function(self):
         start_process_queue(self.q, self.ad_api_handle)
 
+def run_with_timeout(func, timeout, *args, **kwargs):
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = executor.submit(func, *args, **kwargs)
+        try:
+            result = future.result(timeout=timeout)
+            return True, result  # 返回 True 和结果表示成功
+        except concurrent.futures.TimeoutError:
+            print("操作超时，已终止")
+            return False, None  # 返回 False 和 None 表示失败
+
 def start_process_queue(request_que, ad_api_handle):
     global current_request
     global final_results
@@ -110,16 +121,22 @@ def start_process_queue(request_que, ad_api_handle):
 
                 for _ in range(max_retry):
                     try:
-                        res = ad_api_handle.img2imgapi(current_request.get("payload"))
-                        # 如果成功执行操作，可以在此处添加其他逻辑
-                        break  # 如果成功，跳出循环
+                        # 设置超时为10秒
+                        status, res = run_with_timeout(ad_api_handle.img2imgapi, 100, current_request.get("payload"))
+                        if status == False:
+                            current_request["status"] = "process-timeout"
+                            update_request_status_sql(current_request)
+                            current_request = {}
+                            ad_api_handle.interruptapi()
+                            return
+                        break
                     except RuntimeError as e:
                         if "CUDA out of memory" in str(e):
                             # 如果捕获到GPU内存不足异常，可以在此处添加处理逻辑
                             print("GPU内存不足，正在重试...")
                             torch.cuda.empty_cache()  # 清空GPU缓存
                         else:
-                            print("异常错误...")
+                            current_request = {}
                             raise e
                 else:
                     # 如果发生其他运行时错误，可以选择处理或抛出
