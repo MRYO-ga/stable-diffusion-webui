@@ -98,6 +98,9 @@ def run_with_timeout(func, timeout, *args, **kwargs):
         except concurrent.futures.TimeoutError:
             print("操作超时，已终止")
             return False, None  # 返回 False 和 None 表示失败
+        except Exception as e:
+            print("其他异常")
+            raise e
 
 def start_process_queue(request_que, ad_api_handle):
     global current_request
@@ -136,8 +139,19 @@ def start_process_queue(request_que, ad_api_handle):
                             print("GPU内存不足，正在重试...")
                             torch.cuda.empty_cache()  # 清空GPU缓存
                         else:
+                            print("img2imgapi error")
+                            current_request["status"] = 'sd process Exception'
+                            update_request_status_sql(current_request)
                             current_request = {}
-                            raise e
+                            print(e)
+                            return
+                    except Exception as e:
+                        print("img2imgapi error")
+                        current_request["status"] = 'sd process Exception'
+                        update_request_status_sql(current_request)
+                        current_request = {}
+                        print(e)
+                        return
                 else:
                     # 如果发生其他运行时错误，可以选择处理或抛出
                     print("GPU内存不足，跳过当前请求...")
