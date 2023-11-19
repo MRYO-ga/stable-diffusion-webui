@@ -338,6 +338,7 @@ class Api:
         self.add_api_route("/sdapi/v1/queue-query-result", self.queue_query_result, methods=["POST"], status_code=201)
         self.add_api_route("/sdapi/v1/get-user-data", self.get_user_data, methods=["POST"], status_code=201)
         self.add_api_route("/sdapi/v1/query-sql-data-by-dict", self.query_sql_data_by_dict, methods=["POST"], status_code=201)
+        self.add_api_route("/sdapi/v1/query-photo-image-sql-data-by-dict", self.query_photo_image_sql_data_by_dict, methods=["POST"], status_code=201)
         self.add_api_route("/sdapi/v1/txt2img", self.text2imgapi, methods=["POST"], response_model=models.TextToImageResponse)
         self.add_api_route("/sdapi/v1/img2img", self.img2imgapi, methods=["POST"], response_model=models.ImageToImageResponse)
         self.add_api_route("/sdapi/v1/extra-single-image", self.extras_single_image_api, methods=["POST"], response_model=models.ExtrasSingleImageResponse)
