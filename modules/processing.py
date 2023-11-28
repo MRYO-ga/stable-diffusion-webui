@@ -1396,6 +1396,7 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
         crop_region = None
 
         image_mask = self.image_mask
+        print("self.image_mask", self.image_mask)
 
         if image_mask is not None:
             # image_mask is passed in as RGBA by Gradio to support alpha masks,

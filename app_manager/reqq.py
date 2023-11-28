@@ -13,6 +13,7 @@ from modules.progress import ProgressRequest
 from queue import Full
 from datetime import datetime
 import concurrent.futures
+import traceback
 
 current_request = {}
 final_results = {}
@@ -99,7 +100,8 @@ def run_with_timeout(func, timeout, *args, **kwargs):
             print("操作超时，已终止")
             return False, None  # 返回 False 和 None 表示失败
         except Exception as e:
-            print("其他异常")
+            print("其他异常", e)
+            traceback.print_exc()
             raise e
 
 def start_process_queue(request_que, ad_api_handle):
