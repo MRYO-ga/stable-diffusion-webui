@@ -14,6 +14,8 @@ initialize.imports()
 
 initialize.check_versions()
 
+import sys
+sys.path.append('/home/vipuser/code/stable_diffusion_webui/extensions/AA-sd-webui-roop')
 
 def create_api(app):
     from modules.api.api import Api
