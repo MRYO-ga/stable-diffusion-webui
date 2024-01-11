@@ -165,8 +165,12 @@ def start_process_queue(request_que, ad_api_handle):
             current_request["payload"] = ''
             final_request = copy.deepcopy(current_request)
             current_request = {}
+            new_res = copy.deepcopy(res)
+
+            # 修改新对象的 parameters 属性
+            new_res.parameters["alwayson_scripts"] = {}
             final_request["status"] = "finishing"
-            final_request["result"] = res
+            final_request["result"] = new_res
             final_request["process_time"] = time.time() - start_time
             save_image_to_sql(final_request)
 
